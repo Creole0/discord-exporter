@@ -1,0 +1,413 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Discord 论坛导出工具</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            min-height: 100vh;
+            color: #fff;
+        }
+        
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 40px 20px;
+        }
+        
+        h1 {
+            text-align: center;
+            margin-bottom: 10px;
+            color: #5865f2;
+            font-size: 2.5em;
+        }
+        
+        .subtitle {
+            text-align: center;
+            color: #8e9297;
+            margin-bottom: 40px;
+        }
+        
+        .card {
+            background: #2f3136;
+            border-radius: 12px;
+            padding: 30px;
+            margin-bottom: 20px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+        }
+        
+        .card-title {
+            font-size: 1.2em;
+            margin-bottom: 20px;
+            color: #fff;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .card-title::before {
+            content: '';
+            width: 4px;
+            height: 20px;
+            background: #5865f2;
+            border-radius: 2px;
+        }
+        
+        label {
+            display: block;
+            margin-bottom: 8px;
+            color: #b9bbbe;
+            font-size: 14px;
+        }
+        
+        input[type="text"],
+        input[type="password"],
+        input[type="date"],
+        select,
+        textarea {
+            width: 100%;
+            padding: 12px 15px;
+            border: none;
+            border-radius: 8px;
+            background: #40444b;
+            color: #fff;
+            font-size: 14px;
+            margin-bottom: 15px;
+            transition: all 0.3s;
+        }
+        
+        input:focus,
+        select:focus,
+        textarea:focus {
+            outline: none;
+            box-shadow: 0 0 0 2px #5865f2;
+        }
+        
+        textarea {
+            min-height: 120px;
+            resize: vertical;
+            font-family: monospace;
+        }
+        
+        .row {
+            display: flex;
+            gap: 15px;
+        }
+        
+        .row > div {
+            flex: 1;
+        }
+        
+        .format-options {
+            display: flex;
+            gap: 15px;
+            margin-bottom: 15px;
+        }
+        
+        .format-option {
+            flex: 1;
+            padding: 15px;
+            background: #40444b;
+            border-radius: 8px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s;
+            border: 2px solid transparent;
+        }
+        
+        .format-option:hover {
+            background: #4f545c;
+        }
+        
+        .format-option.selected {
+            border-color: #5865f2;
+            background: rgba(88, 101, 242, 0.2);
+        }
+        
+        .format-option input {
+            display: none;
+        }
+        
+        .format-icon {
+            font-size: 24px;
+            margin-bottom: 5px;
+        }
+        
+        .btn {
+            width: 100%;
+            padding: 15px;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        
+        .btn-primary {
+            background: #5865f2;
+            color: #fff;
+        }
+        
+        .btn-primary:hover {
+            background: #4752c4;
+        }
+        
+        .btn-primary:disabled {
+            background: #4f545c;
+            cursor: not-allowed;
+        }
+        
+        .btn-secondary {
+            background: #4f545c;
+            color: #fff;
+            margin-top: 10px;
+        }
+        
+        .btn-secondary:hover {
+            background: #5d6269;
+        }
+        
+        .status {
+            margin-top: 20px;
+            padding: 15px;
+            border-radius: 8px;
+            display: none;
+        }
+        
+        .status.success {
+            background: rgba(67, 181, 129, 0.2);
+            border: 1px solid #43b581;
+            display: block;
+        }
+        
+        .status.error {
+            background: rgba(240, 71, 71, 0.2);
+            border: 1px solid #f04747;
+            display: block;
+        }
+        
+        .status.loading {
+            background: rgba(88, 101, 242, 0.2);
+            border: 1px solid #5865f2;
+            display: block;
+        }
+        
+        .help-text {
+            font-size: 12px;
+            color: #72767d;
+            margin-top: -10px;
+            margin-bottom: 15px;
+        }
+        
+        .token-status {
+            display: inline-block;
+            padding: 4px 10px;
+            border-radius: 4px;
+            font-size: 12px;
+            margin-left: 10px;
+        }
+        
+        .token-status.set {
+            background: #43b581;
+        }
+        
+        .token-status.not-set {
+            background: #f04747;
+        }
+        
+        .download-link {
+            display: inline-block;
+            margin-top: 10px;
+            padding: 10px 20px;
+            background: #43b581;
+            color: #fff;
+            text-decoration: none;
+            border-radius: 6px;
+            font-weight: bold;
+        }
+        
+        .download-link:hover {
+            background: #3ca374;
+        }
+        
+        .spinner {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 2px solid #fff;
+            border-top-color: transparent;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-right: 10px;
+        }
+        
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎮 Discord 频道导出工具</h1>
+        <p class="subtitle">导出论坛帖子和普通频道消息到Excel/TXT/HTML</p>
+        
+        <!-- Token设置 -->
+        <div class="card">
+            <div class="card-title">
+                Bot Token 设置
+                <span id="tokenStatus" class="token-status not-set">未设置</span>
+            </div>
+            <label>Bot Token</label>
+            <input type="password" id="botToken" placeholder="输入你的Bot Token...">
+            <p class="help-text">输入你的Discord Bot Token</p>
+            <button class="btn btn-secondary" onclick="setToken()">保存Token</button>
+        </div>
+        
+        <!-- 导出设置 -->
+        <div class="card">
+            <div class="card-title">导出设置</div>
+            
+            <label>频道链接（每行一个，支持论坛和普通频道）</label>
+            <textarea id="forumUrls" placeholder="https://discord.com/channels/服务器ID/频道ID&#10;https://discord.com/channels/服务器ID/频道ID"></textarea>
+            <p class="help-text">支持论坛频道和普通文字频道，每行一个链接</p>
+            
+            <div class="row">
+                <div>
+                    <label>开始日期</label>
+                    <input type="date" id="dateFrom">
+                </div>
+                <div>
+                    <label>结束日期</label>
+                    <input type="date" id="dateTo">
+                </div>
+            </div>
+            <p class="help-text">留空则导出全部帖子</p>
+            
+            <label>导出格式</label>
+            <div class="format-options">
+                <label class="format-option selected" onclick="selectFormat(this, 'excel')">
+                    <input type="radio" name="format" value="excel" checked>
+                    <div class="format-icon">📊</div>
+                    <div>Excel</div>
+                </label>
+                <label class="format-option" onclick="selectFormat(this, 'txt')">
+                    <input type="radio" name="format" value="txt">
+                    <div class="format-icon">📝</div>
+                    <div>TXT</div>
+                </label>
+                <label class="format-option" onclick="selectFormat(this, 'html')">
+                    <input type="radio" name="format" value="html">
+                    <div class="format-icon">🌐</div>
+                    <div>HTML</div>
+                </label>
+            </div>
+            
+            <button class="btn btn-primary" id="exportBtn" onclick="startExport()">
+                开始导出
+            </button>
+            
+            <div id="status" class="status"></div>
+        </div>
+    </div>
+    
+    <script>
+        let selectedFormat = 'excel';
+        
+        function selectFormat(el, format) {
+            document.querySelectorAll('.format-option').forEach(opt => {
+                opt.classList.remove('selected');
+            });
+            el.classList.add('selected');
+            selectedFormat = format;
+        }
+        
+        async function setToken() {
+            const token = document.getElementById('botToken').value.trim();
+            if (!token) {
+                alert('请输入Token');
+                return;
+            }
+            
+            try {
+                const res = await fetch('/api/set_token', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({token})
+                });
+                
+                if (res.ok) {
+                    document.getElementById('tokenStatus').textContent = '已设置';
+                    document.getElementById('tokenStatus').className = 'token-status set';
+                    alert('Token已保存！');
+                }
+            } catch (e) {
+                alert('保存失败：' + e.message);
+            }
+        }
+        
+        async function startExport() {
+            const urls = document.getElementById('forumUrls').value.trim().split('\n').filter(u => u.trim());
+            const dateFrom = document.getElementById('dateFrom').value;
+            const dateTo = document.getElementById('dateTo').value;
+            
+            if (urls.length === 0) {
+                showStatus('error', '请输入至少一个论坛链接');
+                return;
+            }
+            
+            const btn = document.getElementById('exportBtn');
+            btn.disabled = true;
+            btn.innerHTML = '<span class="spinner"></span>导出中...';
+            
+            showStatus('loading', '正在获取帖子和消息，请稍候...');
+            
+            try {
+                const res = await fetch('/api/export', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        urls,
+                        date_from: dateFrom,
+                        date_to: dateTo,
+                        format: selectedFormat
+                    })
+                });
+                
+                const data = await res.json();
+                
+                if (data.error) {
+                    showStatus('error', data.error);
+                } else {
+                    showStatus('success', `
+                        导出成功！<br>
+                        帖子数：${data.threads}<br>
+                        消息数：${data.messages}<br>
+                        <a href="/api/download/${data.filename}" class="download-link">📥 下载文件</a>
+                    `);
+                }
+            } catch (e) {
+                showStatus('error', '导出失败：' + e.message);
+            }
+            
+            btn.disabled = false;
+            btn.innerHTML = '开始导出';
+        }
+        
+        function showStatus(type, message) {
+            const status = document.getElementById('status');
+            status.className = 'status ' + type;
+            status.innerHTML = message;
+        }
+    </script>
+</body>
+</html>
