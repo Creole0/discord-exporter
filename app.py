@@ -247,142 +247,135 @@ def set_token():
 @app.route("/api/export", methods=["POST"])
 def export():
     global BOT_TOKEN
-    data = request.json
-
-    urls = data.get("urls", [])
-    date_from = data.get("date_from")
-    date_to = data.get("date_to")
-    export_format = data.get("format", "excel")
-
-    if not BOT_TOKEN:
-        return jsonify({"error": "请先设置Bot Token"}), 400
-
-    if not urls:
-        return jsonify({"error": "请输入至少一个频道链接"}), 400
-
-    # 解析日期
     try:
-        date_from = datetime.strptime(date_from, "%Y-%m-%d") if date_from else None
-        date_to = datetime.strptime(date_to, "%Y-%m-%d") if date_to else None
-        if date_to:
-            date_to = date_to.replace(hour=23, minute=59, second=59)
-    except:
-        return jsonify({"error": "日期格式错误"}), 400
+        data = request.json
 
-    # 收集所有消息
-    all_threads_data = []
-    total_messages = 0
+        urls = data.get("urls", [])
+        date_from = data.get("date_from")
+        date_to = data.get("date_to")
+        export_format = data.get("format", "excel")
 
-    for url in urls:
-        guild_id, channel_id = parse_discord_url(url)
-        if not channel_id:
-            continue
+        if not BOT_TOKEN:
+            return jsonify({"error": "请先设置Bot Token"}), 400
 
-        # 获取频道信息
-        channel_info = get_channel_info(channel_id)
-        if not channel_info:
-            continue
+        if not urls:
+            return jsonify({"error": "请输入至少一个频道链接"}), 400
 
-        channel_type = channel_info.get("type")
-        channel_name = channel_info.get("name", "未知频道")
+        # 解析日期
+        try:
+            date_from = datetime.strptime(date_from, "%Y-%m-%d") if date_from else None
+            date_to = datetime.strptime(date_to, "%Y-%m-%d") if date_to else None
+            if date_to:
+                date_to = date_to.replace(hour=23, minute=59, second=59)
+        except:
+            return jsonify({"error": "日期格式错误"}), 400
 
-        # 类型15是论坛频道
-        if channel_type == 15:
-            # 论坛频道 - 获取帖子
-            threads = get_all_threads(channel_id)
+        # 收集所有消息
+        all_threads_data = []
+        total_messages = 0
 
-            for thread in threads:
-                thread_created = snowflake_to_datetime(thread["id"])
+        for url in urls:
+            guild_id, channel_id = parse_discord_url(url)
+            if not channel_id:
+                continue
 
-                # 时间筛选
-                if date_from and thread_created < date_from:
-                    continue
-                if date_to and thread_created > date_to:
-                    continue
+            # 获取频道信息
+            channel_info = get_channel_info(channel_id)
+            if not channel_info:
+                continue
 
-                messages = get_channel_messages(thread["id"], date_from, date_to)
+            channel_type = channel_info.get("type")
+            channel_name = channel_info.get("name", "未知频道")
+
+            # 类型15是论坛频道
+            if channel_type == 15:
+                # 论坛频道 - 获取帖子
+                threads = get_all_threads(channel_id)
+
+                for thread in threads:
+                    thread_created = snowflake_to_datetime(thread["id"])
+
+                    # 时间筛选
+                    if date_from and thread_created < date_from:
+                        continue
+                    if date_to and thread_created > date_to:
+                        continue
+
+                    messages = get_channel_messages(thread["id"], date_from, date_to)
+                    messages.sort(key=lambda m: m["id"])
+
+                    thread_data = {
+                        "name": thread["name"],
+                        "created": thread_created.strftime("%Y-%m-%d %H:%M"),
+                        "messages": [],
+                    }
+
+                    for msg in messages:
+                        msg_data = {
+                            "author": msg.get("author", {}).get("username", "未知"),
+                            "time": snowflake_to_datetime(msg["id"]).strftime("%Y-%m-%d %H:%M:%S"),
+                            "content": msg.get("content", ""),
+                            "attachments": "\n".join([a.get("url", "") for a in msg.get("attachments", [])]),
+                            "link": f"https://discord.com/channels/{guild_id}/{thread['id']}/{msg['id']}",
+                        }
+                        thread_data["messages"].append(msg_data)
+                        total_messages += 1
+
+                    if thread_data["messages"]:
+                        all_threads_data.append(thread_data)
+
+                    time.sleep(0.3)
+            else:
+                # 普通频道 - 直接获取消息
+                messages = get_channel_messages(channel_id, date_from, date_to)
                 messages.sort(key=lambda m: m["id"])
 
-                thread_data = {
-                    "name": thread["name"],
-                    "created": thread_created.strftime("%Y-%m-%d %H:%M"),
-                    "messages": [],
-                }
-
-                for msg in messages:
-                    msg_data = {
-                        "author": msg.get("author", {}).get("username", "未知"),
-                        "time": snowflake_to_datetime(msg["id"]).strftime(
-                            "%Y-%m-%d %H:%M:%S"
-                        ),
-                        "content": msg.get("content", ""),
-                        "attachments": "\n".join(
-                            [a.get("url", "") for a in msg.get("attachments", [])]
-                        ),
-                        "link": f"https://discord.com/channels/{guild_id}/{thread['id']}/{msg['id']}",
+                if messages:
+                    channel_created = snowflake_to_datetime(channel_id)
+                    thread_data = {
+                        "name": f"#{channel_name}",
+                        "created": channel_created.strftime("%Y-%m-%d %H:%M"),
+                        "messages": [],
                     }
-                    thread_data["messages"].append(msg_data)
-                    total_messages += 1
 
-                if thread_data["messages"]:
+                    for msg in messages:
+                        msg_data = {
+                            "author": msg.get("author", {}).get("username", "未知"),
+                            "time": snowflake_to_datetime(msg["id"]).strftime("%Y-%m-%d %H:%M:%S"),
+                            "content": msg.get("content", ""),
+                            "attachments": "\n".join([a.get("url", "") for a in msg.get("attachments", [])]),
+                            "link": f"https://discord.com/channels/{guild_id}/{channel_id}/{msg['id']}",
+                        }
+                        thread_data["messages"].append(msg_data)
+                        total_messages += 1
+
                     all_threads_data.append(thread_data)
 
-                time.sleep(0.3)
+        if not all_threads_data:
+            return jsonify({"error": "没有找到符合条件的消息"}), 400
+
+        # 导出文件
+        os.makedirs("exports", exist_ok=True)
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+        if export_format == "excel":
+            filename = f"exports/Discord导出_{timestamp}.xlsx"
+            export_to_excel(all_threads_data, filename)
+        elif export_format == "txt":
+            filename = f"exports/Discord导出_{timestamp}.txt"
+            export_to_txt(all_threads_data, filename)
         else:
-            # 普通频道 - 直接获取消息
-            messages = get_channel_messages(channel_id, date_from, date_to)
-            messages.sort(key=lambda m: m["id"])
+            filename = f"exports/Discord导出_{timestamp}.html"
+            export_to_html(all_threads_data, filename)
 
-            if messages:
-                channel_created = snowflake_to_datetime(channel_id)
-                thread_data = {
-                    "name": f"#{channel_name}",
-                    "created": channel_created.strftime("%Y-%m-%d %H:%M"),
-                    "messages": [],
-                }
-
-                for msg in messages:
-                    msg_data = {
-                        "author": msg.get("author", {}).get("username", "未知"),
-                        "time": snowflake_to_datetime(msg["id"]).strftime(
-                            "%Y-%m-%d %H:%M:%S"
-                        ),
-                        "content": msg.get("content", ""),
-                        "attachments": "\n".join(
-                            [a.get("url", "") for a in msg.get("attachments", [])]
-                        ),
-                        "link": f"https://discord.com/channels/{guild_id}/{channel_id}/{msg['id']}",
-                    }
-                    thread_data["messages"].append(msg_data)
-                    total_messages += 1
-
-                all_threads_data.append(thread_data)
-
-    if not all_threads_data:
-        return jsonify({"error": "没有找到符合条件的消息"}), 400
-
-    # 导出文件
-    os.makedirs("exports", exist_ok=True)
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-
-    if export_format == "excel":
-        filename = f"exports/Discord导出_{timestamp}.xlsx"
-        export_to_excel(all_threads_data, filename)
-    elif export_format == "txt":
-        filename = f"exports/Discord导出_{timestamp}.txt"
-        export_to_txt(all_threads_data, filename)
-    else:
-        filename = f"exports/Discord导出_{timestamp}.html"
-        export_to_html(all_threads_data, filename)
-
-    return jsonify(
-        {
+        return jsonify({
             "success": True,
             "filename": filename,
             "threads": len(all_threads_data),
             "messages": total_messages,
-        }
-    )
+        })
+    except Exception as e:
+        return jsonify({"error": f"导出失败: {str(e)}"}), 500
 
 
 @app.route("/api/download/<path:filename>")
