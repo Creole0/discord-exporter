@@ -263,12 +263,17 @@ def export():
 
         # 解析日期
         try:
-            date_from = datetime.strptime(date_from, "%Y-%m-%d") if date_from else None
-            date_to = datetime.strptime(date_to, "%Y-%m-%d") if date_to else None
-            if date_to:
-                date_to = date_to.replace(hour=23, minute=59, second=59)
-        except:
-            return jsonify({"error": "日期格式错误"}), 400
+            date_from_parsed = None
+            date_to_parsed = None
+            if date_from and date_from.strip():
+                date_from_parsed = datetime.strptime(date_from.strip(), "%Y-%m-%d")
+            if date_to and date_to.strip():
+                date_to_parsed = datetime.strptime(date_to.strip(), "%Y-%m-%d")
+                date_to_parsed = date_to_parsed.replace(hour=23, minute=59, second=59)
+            date_from = date_from_parsed
+            date_to = date_to_parsed
+        except Exception as e:
+            return jsonify({"error": f"日期格式错误: {str(e)}"}), 400
 
         # 收集所有消息
         all_threads_data = []
