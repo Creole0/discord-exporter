@@ -378,7 +378,7 @@
             const dateTo = document.getElementById('dateTo').value;
             
             if (urls.length === 0) {
-                showStatus('error', '请输入至少一个论坛链接');
+                showStatus('error', '请输入至少一个频道链接');
                 return;
             }
             
@@ -386,7 +386,7 @@
             btn.disabled = true;
             btn.innerHTML = '<span class="spinner"></span>导出中...';
             
-            showStatus('loading', '正在获取帖子和消息，请稍候...');
+            showStatus('loading', '正在启动导出任务...');
             
             try {
                 const res = await fetch('/api/export', {
@@ -404,20 +404,51 @@
                 
                 if (data.error) {
                     showStatus('error', data.error);
-                } else {
-                    showStatus('success', `
-                        导出成功！<br>
-                        帖子数：${data.threads}<br>
-                        消息数：${data.messages}<br>
-                        <a href="/api/download/${data.filename}" class="download-link">📥 下载文件</a>
-                    `);
+                    btn.disabled = false;
+                    btn.innerHTML = '开始导出';
+                } else if (data.status === 'started') {
+                    // 任务已启动，开始轮询状态
+                    pollTaskStatus();
+                } else if (data.status === 'busy') {
+                    showStatus('error', data.message);
+                    btn.disabled = false;
+                    btn.innerHTML = '开始导出';
                 }
             } catch (e) {
                 showStatus('error', '导出失败：' + e.message);
+                btn.disabled = false;
+                btn.innerHTML = '开始导出';
             }
-            
-            btn.disabled = false;
-            btn.innerHTML = '开始导出';
+        }
+        
+        async function pollTaskStatus() {
+            try {
+                const res = await fetch('/api/status');
+                const status = await res.json();
+                
+                if (status.is_running) {
+                    showStatus('loading', status.progress || '处理中...');
+                    setTimeout(pollTaskStatus, 2000); // 2秒后再次检查
+                } else {
+                    const btn = document.getElementById('exportBtn');
+                    btn.disabled = false;
+                    btn.innerHTML = '开始导出';
+                    
+                    if (status.error) {
+                        showStatus('error', status.error);
+                    } else if (status.result) {
+                        showStatus('success', `
+                            导出成功！<br>
+                            帖子数：${status.result.threads}<br>
+                            消息数：${status.result.messages}<br>
+                            <a href="/api/download/${status.filename}" class="download-link">📥 下载文件</a>
+                        `);
+                    }
+                }
+            } catch (e) {
+                console.error('状态检查失败:', e);
+                setTimeout(pollTaskStatus, 5000); // 出错了等5秒再试
+            }
         }
         
         function showStatus(type, message) {
