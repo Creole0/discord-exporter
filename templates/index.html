@@ -323,6 +323,23 @@
     <script>
         let selectedFormat = 'excel';
         
+        // 页面加载时检查Token状态
+        async function checkTokenStatus() {
+            try {
+                const res = await fetch('/api/check_token');
+                const data = await res.json();
+                if (data.has_token) {
+                    document.getElementById('tokenStatus').textContent = '已设置(环境变量)';
+                    document.getElementById('tokenStatus').className = 'token-status set';
+                }
+            } catch (e) {
+                console.error('检查Token失败:', e);
+            }
+        }
+        
+        // 页面加载时执行
+        checkTokenStatus();
+        
         function selectFormat(el, format) {
             document.querySelectorAll('.format-option').forEach(opt => {
                 opt.classList.remove('selected');

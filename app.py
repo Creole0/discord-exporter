@@ -230,6 +230,12 @@ def index():
     return render_template("index.html")
 
 
+@app.route("/api/check_token")
+def check_token():
+    """检查是否已设置Token"""
+    return jsonify({"has_token": bool(BOT_TOKEN)})
+
+
 @app.route("/api/set_token", methods=["POST"])
 def set_token():
     global BOT_TOKEN
