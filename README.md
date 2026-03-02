@@ -20,6 +20,22 @@
 
 ## 本地运行
 
+### Windows 用户（推荐）
+
+**首次使用**：
+```bash
+双击运行 "首次安装.bat"
+```
+
+**日常启动**：
+```bash
+双击运行 "启动.bat"
+```
+
+更多批处理文件说明请查看 [批处理文件说明.md](批处理文件说明.md)
+
+### 手动运行
+
 ```bash
 pip install -r requirements.txt
 python app.py
