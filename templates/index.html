@@ -72,6 +72,7 @@
         input[type="text"],
         input[type="password"],
         input[type="date"],
+        input[type="datetime-local"],
         select,
         textarea {
             width: 100%;
@@ -283,15 +284,15 @@
             
             <div class="row">
                 <div>
-                    <label>开始日期</label>
-                    <input type="date" id="dateFrom">
+                    <label>开始时间</label>
+                    <input type="datetime-local" id="dateFrom">
                 </div>
                 <div>
-                    <label>结束日期</label>
-                    <input type="date" id="dateTo">
+                    <label>结束时间</label>
+                    <input type="datetime-local" id="dateTo">
                 </div>
             </div>
-            <p class="help-text">留空则导出全部帖子</p>
+            <p class="help-text">留空则导出全部帖子，可精确选择到具体小时和分钟</p>
             
             <label>导出格式</label>
             <div class="format-options">

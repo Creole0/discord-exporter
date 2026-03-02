@@ -319,18 +319,29 @@ def export():
             export_lock.release()
             return jsonify({"error": "请输入至少一个频道链接"}), 400
 
-        # 解析日期
+        # 解析日期时间
         date_from_parsed = None
         date_to_parsed = None
         try:
             if date_from and date_from.strip():
-                date_from_parsed = datetime.strptime(date_from.strip(), "%Y-%m-%d")
+                # 尝试解析带时间的格式 (datetime-local)
+                try:
+                    date_from_parsed = datetime.strptime(date_from.strip(), "%Y-%m-%dT%H:%M")
+                except ValueError:
+                    # 兼容旧的仅日期格式
+                    date_from_parsed = datetime.strptime(date_from.strip(), "%Y-%m-%d")
+            
             if date_to and date_to.strip():
-                date_to_parsed = datetime.strptime(date_to.strip(), "%Y-%m-%d")
-                date_to_parsed = date_to_parsed.replace(hour=23, minute=59, second=59)
-        except:
+                # 尝试解析带时间的格式 (datetime-local)
+                try:
+                    date_to_parsed = datetime.strptime(date_to.strip(), "%Y-%m-%dT%H:%M")
+                except ValueError:
+                    # 兼容旧的仅日期格式，自动设置为当天结束
+                    date_to_parsed = datetime.strptime(date_to.strip(), "%Y-%m-%d")
+                    date_to_parsed = date_to_parsed.replace(hour=23, minute=59, second=59)
+        except Exception as e:
             export_lock.release()
-            return jsonify({"error": "日期格式错误"}), 400
+            return jsonify({"error": f"日期时间格式错误: {str(e)}"}), 400
 
         # 重置状态
         task_id = str(uuid.uuid4())[:8]
