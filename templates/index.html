@@ -240,6 +240,54 @@
         .download-link:hover {
             background: #3ca374;
         }
+
+        .inline-actions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-top: 12px;
+        }
+
+        .btn-inline {
+            display: inline-block;
+            border: none;
+            border-radius: 6px;
+            padding: 10px 16px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            text-decoration: none;
+            color: #fff;
+        }
+
+        .btn-generate {
+            background: #5865f2;
+        }
+
+        .btn-generate:hover {
+            background: #4752c4;
+        }
+
+        .btn-preview {
+            background: #3da9fc;
+        }
+
+        .btn-preview:hover {
+            background: #2d95df;
+        }
+
+        .report-card {
+            display: none;
+        }
+
+        .report-frame {
+            width: 100%;
+            height: 600px;
+            border: 1px solid #4f545c;
+            border-radius: 8px;
+            background: #111;
+            margin-top: 10px;
+        }
         
         .spinner {
             display: inline-block;
@@ -272,6 +320,15 @@
             <input type="password" id="botToken" placeholder="输入你的Bot Token...">
             <p class="help-text">输入你的Discord Bot Token</p>
             <button class="btn btn-secondary" onclick="setToken()">保存Token</button>
+
+            <div class="card-title" style="margin-top: 22px;">
+                Gemini API Key 设置
+                <span id="geminiStatus" class="token-status not-set">未设置</span>
+            </div>
+            <label>Gemini API Key</label>
+            <input type="password" id="geminiKey" placeholder="输入你的 Gemini API Key...">
+            <p class="help-text">用于根据导出TXT生成可视化HTML报告</p>
+            <button class="btn btn-secondary" onclick="setGeminiKey()">保存Gemini Key</button>
         </div>
         
         <!-- 导出设置 -->
@@ -319,10 +376,22 @@
             
             <div id="status" class="status"></div>
         </div>
+
+        <div class="card report-card" id="reportCard">
+            <div class="card-title">可视化报告预览</div>
+            <p class="help-text" style="margin-top: 0;">点击导出成功后的“生成可视化报告”按钮后，这里会显示预览</p>
+            <iframe id="reportFrame" class="report-frame" title="可视化报告预览"></iframe>
+            <div class="inline-actions">
+                <a id="reportDownloadLink" class="btn-inline btn-preview" target="_blank">📥 下载可视化报告</a>
+            </div>
+        </div>
     </div>
     
     <script>
         let selectedFormat = 'excel';
+        let latestExportFilename = '';
+        let latestTxtFilename = '';
+        let latestReportFilename = '';
         
         // 页面加载时检查Token状态
         async function checkTokenStatus() {
@@ -332,6 +401,10 @@
                 if (data.has_token) {
                     document.getElementById('tokenStatus').textContent = '已设置(环境变量)';
                     document.getElementById('tokenStatus').className = 'token-status set';
+                }
+                if (data.has_gemini) {
+                    document.getElementById('geminiStatus').textContent = '已设置';
+                    document.getElementById('geminiStatus').className = 'token-status set';
                 }
             } catch (e) {
                 console.error('检查Token失败:', e);
@@ -367,6 +440,33 @@
                     document.getElementById('tokenStatus').textContent = '已设置';
                     document.getElementById('tokenStatus').className = 'token-status set';
                     alert('Token已保存！');
+                }
+            } catch (e) {
+                alert('保存失败：' + e.message);
+            }
+        }
+
+        async function setGeminiKey() {
+            const key = document.getElementById('geminiKey').value.trim();
+            if (!key) {
+                alert('请输入 Gemini API Key');
+                return;
+            }
+
+            try {
+                const res = await fetch('/api/set_gemini_key', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({key})
+                });
+
+                const data = await res.json();
+                if (res.ok && data.success) {
+                    document.getElementById('geminiStatus').textContent = '已设置';
+                    document.getElementById('geminiStatus').className = 'token-status set';
+                    alert('Gemini API Key 已保存！');
+                } else {
+                    alert('保存失败：' + (data.error || '未知错误'));
                 }
             } catch (e) {
                 alert('保存失败：' + e.message);
@@ -421,6 +521,26 @@
                 btn.innerHTML = '开始导出';
             }
         }
+
+        function renderExportSuccess(status) {
+            latestExportFilename = status.filename || (status.result && status.result.export_filename) || '';
+            latestTxtFilename = status.txt_filename || (status.result && status.result.txt_filename) || '';
+            const reportActions = latestReportFilename ? `
+                <a href="/api/report?filename=${encodeURIComponent(latestReportFilename)}" target="_blank" class="btn-inline btn-preview">👀 打开上次报告</a>
+                <a href="/api/download/${latestReportFilename}" class="btn-inline btn-preview">📥 下载上次报告</a>
+            ` : '';
+
+            showStatus('success', `
+                导出成功！<br>
+                帖子数：${status.result.threads}<br>
+                消息数：${status.result.messages}<br>
+                <div class="inline-actions">
+                    <a href="/api/download/${latestExportFilename}" class="download-link">📥 下载导出文件</a>
+                    <button id="visualizeBtn" class="btn-inline btn-generate" onclick="generateVisualization()">✨ 生成可视化报告</button>
+                    ${reportActions}
+                </div>
+            `);
+        }
         
         async function pollTaskStatus() {
             try {
@@ -438,17 +558,69 @@
                     if (status.error) {
                         showStatus('error', status.error);
                     } else if (status.result) {
-                        showStatus('success', `
-                            导出成功！<br>
-                            帖子数：${status.result.threads}<br>
-                            消息数：${status.result.messages}<br>
-                            <a href="/api/download/${status.filename}" class="download-link">📥 下载文件</a>
-                        `);
+                        renderExportSuccess(status);
                     }
                 }
             } catch (e) {
                 console.error('状态检查失败:', e);
                 setTimeout(pollTaskStatus, 5000); // 出错了等5秒再试
+            }
+        }
+
+        async function generateVisualization() {
+            if (!latestTxtFilename) {
+                showStatus('error', '未找到可视化所需的TXT文件，请先完成一次导出');
+                return;
+            }
+
+            const btn = document.getElementById('visualizeBtn');
+            if (btn) {
+                btn.disabled = true;
+                btn.textContent = '生成中...';
+            }
+
+            showStatus('loading', '正在调用 Gemini 生成可视化报告，请稍候...');
+
+            try {
+                const res = await fetch('/api/visualize', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({txt_filename: latestTxtFilename})
+                });
+                const data = await res.json();
+
+                if (!res.ok || data.error) {
+                    showStatus('error', data.error || '可视化生成失败');
+                    if (btn) {
+                        btn.disabled = false;
+                        btn.textContent = '✨ 生成可视化报告';
+                    }
+                    return;
+                }
+
+                latestReportFilename = data.filename;
+                showStatus('success', `
+                    可视化报告生成成功！<br>
+                    <div class="inline-actions">
+                        <a href="/api/download/${latestExportFilename}" class="download-link">📥 下载导出文件</a>
+                        <a href="/api/report?filename=${encodeURIComponent(latestReportFilename)}" target="_blank" class="btn-inline btn-preview">👀 新窗口打开报告</a>
+                        <a href="/api/download/${latestReportFilename}" class="btn-inline btn-preview">📥 下载可视化报告</a>
+                    </div>
+                `);
+
+                const reportCard = document.getElementById('reportCard');
+                const reportFrame = document.getElementById('reportFrame');
+                const reportDownload = document.getElementById('reportDownloadLink');
+                reportCard.style.display = 'block';
+                reportFrame.src = `/api/report?filename=${encodeURIComponent(latestReportFilename)}`;
+                reportDownload.href = `/api/download/${latestReportFilename}`;
+            } catch (e) {
+                showStatus('error', '可视化生成失败：' + e.message);
+            } finally {
+                if (btn) {
+                    btn.disabled = false;
+                    btn.textContent = '✨ 生成可视化报告';
+                }
             }
         }
         

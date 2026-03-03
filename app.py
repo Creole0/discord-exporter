@@ -13,11 +13,14 @@ import os
 import re
 import threading
 import uuid
+from google import genai
 
 app = Flask(__name__)
 
 # 默认Bot Token（从环境变量读取）
 BOT_TOKEN = os.environ.get("DISCORD_BOT_TOKEN", "")
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
+VISUAL_PROMPT_PATH = os.path.join("exports", "聊天记录可视化prompt.txt")
 
 API_BASE = "https://discord.com/api/v9"
 
@@ -29,7 +32,9 @@ task_status = {
     "progress": "",
     "result": None,
     "error": None,
-    "filename": None
+    "filename": None,
+    "txt_filename": None,
+    "report_filename": None
 }
 
 
@@ -175,6 +180,133 @@ def export_to_html(threads_data, filename):
         f.write(html)
 
 
+def get_visual_prompt():
+    if not os.path.exists(VISUAL_PROMPT_PATH):
+        return None
+    with open(VISUAL_PROMPT_PATH, "r", encoding="utf-8") as f:
+        return f.read()
+
+
+def extract_html_content(model_text):
+    if not model_text:
+        return ""
+    content = model_text.strip()
+    code_match = re.search(r"```(?:html)?\s*([\s\S]*?)```", content, re.IGNORECASE)
+    if code_match:
+        content = code_match.group(1).strip()
+    return content
+
+
+def remove_night_owl_section(html_content):
+    if not html_content:
+        return html_content
+    cleaned = re.sub(
+        r"<h3>\s*熬夜冠军\s*</h3>\s*<div class=\"night-owls-container\">[\s\S]*?</div>\s*",
+        "",
+        html_content,
+        flags=re.IGNORECASE
+    )
+    return cleaned
+
+
+def ensure_mermaid_script(html_content):
+    if "mermaid.min.js" in html_content:
+        return html_content
+
+    mermaid_script = (
+        "\n<script src=\"https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js\"></script>"
+        "\n<script>if(window.mermaid){mermaid.initialize({startOnLoad:true});}</script>\n"
+    )
+
+    if "</body>" in html_content:
+        return html_content.replace("</body>", mermaid_script + "</body>")
+    return html_content + mermaid_script
+
+
+def inject_watermark(html_content):
+    watermark_css = """
+<style>
+.creole-watermark {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    text-align: center;
+    padding: 8px 0;
+    font-size: 13px;
+    font-family: 'SF Pro Display', 'Segoe UI', sans-serif;
+    color: rgba(255,255,255,0.25);
+    letter-spacing: 2px;
+    z-index: 9999;
+    pointer-events: none;
+    background: linear-gradient(transparent, rgba(15,14,23,0.8));
+}
+body::before {
+    content: 'Made by Creole';
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%) rotate(-30deg);
+    font-size: 80px;
+    font-weight: 700;
+    color: rgba(255,255,255,0.03);
+    z-index: 9998;
+    pointer-events: none;
+    white-space: nowrap;
+}
+</style>
+"""
+    watermark_html = '<div class="creole-watermark">Made by Creole</div>'
+
+    if "</head>" in html_content:
+        html_content = html_content.replace("</head>", watermark_css + "</head>")
+    else:
+        html_content = watermark_css + html_content
+
+    if "</body>" in html_content:
+        html_content = html_content.replace("</body>", watermark_html + "</body>")
+    else:
+        html_content += watermark_html
+
+    return html_content
+
+
+def generate_visual_report(chat_text):
+    prompt_template = get_visual_prompt()
+    if not prompt_template:
+        raise ValueError(f"未找到可视化Prompt文件: {VISUAL_PROMPT_PATH}")
+    if not GEMINI_API_KEY:
+        raise ValueError("请先设置 Gemini API Key")
+
+    client = genai.Client(api_key=GEMINI_API_KEY)
+
+    final_prompt = f"""{prompt_template}
+
+额外要求（硬性）：
+1. 只输出完整HTML，不要输出Markdown代码块。
+2. 删除“熬夜冠军”模块（包括相关标题和内容）。
+3. 默认生成完整版报告。
+4. 数据不足时对应字段写“暂无数据”，不要留占位符。
+5. 输出的HTML可直接保存并在浏览器打开。
+
+以下是需要分析的Discord聊天记录（TXT）：
+{chat_text}
+"""
+
+    response = client.models.generate_content(
+        model="gemini-3-flash-preview",
+        contents=final_prompt,
+    )
+    html_content = extract_html_content(getattr(response, "text", ""))
+    if not html_content:
+        raise ValueError("Gemini 未返回有效HTML内容")
+
+    html_content = remove_night_owl_section(html_content)
+    html_content = ensure_mermaid_script(html_content)
+    html_content = inject_watermark(html_content)
+    return html_content
+
+
 def do_export(urls, date_from, date_to, export_format):
     """后台执行导出任务"""
     global task_status
@@ -253,19 +385,27 @@ def do_export(urls, date_from, date_to, export_format):
         task_status["progress"] = "正在生成文件..."
         os.makedirs("exports", exist_ok=True)
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        txt_filename = f"exports/Discord导出_{timestamp}.txt"
+        export_to_txt(all_threads_data, txt_filename)
 
         if export_format == "excel":
             filename = f"exports/Discord导出_{timestamp}.xlsx"
             export_to_excel(all_threads_data, filename)
         elif export_format == "txt":
-            filename = f"exports/Discord导出_{timestamp}.txt"
-            export_to_txt(all_threads_data, filename)
+            filename = txt_filename
         else:
             filename = f"exports/Discord导出_{timestamp}.html"
             export_to_html(all_threads_data, filename)
 
-        task_status["result"] = {"threads": len(all_threads_data), "messages": total_messages}
+        task_status["result"] = {
+            "threads": len(all_threads_data),
+            "messages": total_messages,
+            "txt_filename": txt_filename,
+            "export_filename": filename
+        }
         task_status["filename"] = filename
+        task_status["txt_filename"] = txt_filename
+        task_status["report_filename"] = None
         task_status["progress"] = "完成！"
 
     except Exception as e:
@@ -283,7 +423,10 @@ def index():
 
 @app.route("/api/check_token")
 def check_token():
-    return jsonify({"has_token": bool(BOT_TOKEN)})
+    return jsonify({
+        "has_token": bool(BOT_TOKEN),
+        "has_gemini": bool(GEMINI_API_KEY)
+    })
 
 
 @app.route("/api/set_token", methods=["POST"])
@@ -291,6 +434,14 @@ def set_token():
     global BOT_TOKEN
     data = request.json
     BOT_TOKEN = data.get("token", "")
+    return jsonify({"success": True})
+
+
+@app.route("/api/set_gemini_key", methods=["POST"])
+def set_gemini_key():
+    global GEMINI_API_KEY
+    data = request.json
+    GEMINI_API_KEY = data.get("key", "")
     return jsonify({"success": True})
 
 
@@ -351,6 +502,8 @@ def export():
         task_status["result"] = None
         task_status["error"] = None
         task_status["filename"] = None
+        task_status["txt_filename"] = None
+        task_status["report_filename"] = None
 
         # 启动后台线程
         thread = threading.Thread(target=do_export, args=(urls, date_from_parsed, date_to_parsed, export_format))
@@ -376,6 +529,53 @@ def download(filename):
     if os.path.exists(filepath):
         return send_file(filepath, as_attachment=True)
     return jsonify({"error": "文件不存在"}), 404
+
+
+@app.route("/api/report")
+def preview_report():
+    filename = request.args.get("filename", "").strip()
+    if not filename:
+        return jsonify({"error": "缺少文件名参数"}), 400
+    filepath = os.path.join(os.getcwd(), filename)
+    if os.path.exists(filepath):
+        return send_file(filepath, as_attachment=False, mimetype="text/html")
+    return jsonify({"error": "报告文件不存在"}), 404
+
+
+@app.route("/api/visualize", methods=["POST"])
+def visualize():
+    global task_status
+    if not GEMINI_API_KEY:
+        return jsonify({"error": "请先设置 Gemini API Key"}), 400
+
+    data = request.json or {}
+    txt_filename = data.get("txt_filename") or task_status.get("txt_filename")
+    if not txt_filename:
+        return jsonify({"error": "未找到可视化所需的TXT导出文件"}), 400
+
+    txt_filepath = os.path.join(os.getcwd(), txt_filename)
+    if not os.path.exists(txt_filepath):
+        return jsonify({"error": f"TXT文件不存在: {txt_filename}"}), 404
+
+    try:
+        with open(txt_filepath, "r", encoding="utf-8") as f:
+            chat_text = f.read()
+        if not chat_text.strip():
+            return jsonify({"error": "TXT内容为空，无法生成可视化报告"}), 400
+
+        html_content = generate_visual_report(chat_text)
+        os.makedirs("exports", exist_ok=True)
+        report_filename = f"exports/聊天记录可视化_{datetime.now().strftime('%Y%m%d_%H%M%S')}.html"
+        with open(report_filename, "w", encoding="utf-8") as f:
+            f.write(html_content)
+
+        task_status["report_filename"] = report_filename
+        return jsonify({
+            "success": True,
+            "filename": report_filename
+        })
+    except Exception as e:
+        return jsonify({"error": f"可视化生成失败: {str(e)}"}), 500
 
 
 if __name__ == "__main__":
