@@ -9,32 +9,49 @@ echo    Discord 导出工具 - 一键启动
 echo ========================================
 echo.
 
+:: 设置 Python 路径
+set PYTHON_PATH=C:\Users\muhua\AppData\Local\Programs\Python\Python312\python.exe
+
 :: 检查 Python 是否安装
 echo [1/4] 检查 Python 环境...
+
+:: 首先尝试系统 PATH 中的 python
 python --version >nul 2>&1
-if %errorlevel% neq 0 (
-    echo [错误] 未检测到 Python！
+if %errorlevel% equ 0 (
+    set PYTHON_PATH=python
+    python --version
+    echo [✓] Python 环境正常
     echo.
-    echo 请先安装 Python 3.7+
-    echo 下载地址: https://www.python.org/downloads/
-    echo.
-    echo 安装时请勾选 "Add Python to PATH"
-    echo.
-    pause
-    exit /b 1
+    goto :check_deps
 )
 
-python --version
-echo [✓] Python 环境正常
+:: 尝试使用固定路径
+if exist "C:\Users\muhua\AppData\Local\Programs\Python\Python312\python.exe" (
+    set PYTHON_PATH=C:\Users\muhua\AppData\Local\Programs\Python\Python312\python.exe
+    "%PYTHON_PATH%" --version
+    echo [✓] Python 环境正常
+    echo.
+    goto :check_deps
+)
+
+:: 未找到 Python
+echo [错误] 未检测到 Python！
 echo.
+echo 请双击运行 "安装Python.bat" 自动安装
+echo 或手动下载: https://www.python.org/downloads/
+echo.
+pause
+exit /b 1
+
+:check_deps
 
 :: 检查并安装依赖
 echo [2/4] 检查依赖包...
-pip show flask >nul 2>&1
+"%PYTHON_PATH%" -m pip show flask >nul 2>&1
 if %errorlevel% neq 0 (
     echo [提示] 检测到缺少依赖，正在安装...
     echo.
-    pip install -r requirements.txt
+    "%PYTHON_PATH%" -m pip install -r requirements.txt
     if %errorlevel% neq 0 (
         echo.
         echo [错误] 依赖安装失败！
@@ -77,7 +94,7 @@ timeout /t 2 /nobreak >nul
 start http://localhost:5000
 
 :: 启动 Flask 应用
-python app.py
+"%PYTHON_PATH%" app.py
 
 :: 如果应用异常退出
 echo.

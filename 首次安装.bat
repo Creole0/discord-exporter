@@ -11,41 +11,69 @@ echo.
 echo 此脚本将帮助你完成初始化设置
 echo.
 
+:: 设置 Python 路径
+set PYTHON_PATH=python
+
 :: 检查 Python
 echo [1/5] 检查 Python 环境...
+
+:: 首先尝试系统 PATH
 python --version >nul 2>&1
-if %errorlevel% neq 0 (
-    echo [错误] 未检测到 Python！
+if %errorlevel% equ 0 (
+    set PYTHON_PATH=python
+    python --version
+    echo [✓] Python 已安装
     echo.
-    echo === 安装 Python 的步骤 ===
-    echo 1. 访问: https://www.python.org/downloads/
-    echo 2. 下载最新的 Python 3.x 版本
-    echo 3. 安装时务必勾选 "Add Python to PATH"
-    echo 4. 安装完成后重新运行此脚本
-    echo.
-    pause
-    start https://www.python.org/downloads/
-    exit /b 1
+    goto :check_pip
 )
 
-python --version
-echo [✓] Python 已安装
+:: 尝试固定路径
+if exist "C:\Users\muhua\AppData\Local\Programs\Python\Python312\python.exe" (
+    set PYTHON_PATH=C:\Users\muhua\AppData\Local\Programs\Python\Python312\python.exe
+    "%PYTHON_PATH%" --version
+    echo [✓] Python 已安装
+    echo.
+    goto :check_pip
+)
+
+:: 未找到，提供安装选项
+echo [错误] 未检测到 Python！
 echo.
+set /p auto_install="是否自动下载并安装 Python？(Y/N): "
+if /i "%auto_install%"=="Y" (
+    if exist "安装Python.bat" (
+        call "安装Python.bat"
+        exit /b 0
+    )
+)
+
+echo.
+echo === 手动安装 Python 的步骤 ===
+echo 1. 访问: https://www.python.org/downloads/
+echo 2. 下载最新的 Python 3.x 版本
+echo 3. 安装时务必勾选 "Add Python to PATH"
+echo 4. 安装完成后重新运行此脚本
+echo.
+pause
+start https://www.python.org/downloads/
+exit /b 1
+
+:check_pip
 
 :: 检查 pip
 echo [2/5] 检查 pip 环境...
-pip --version >nul 2>&1
+"%PYTHON_PATH%" -m pip --version >nul 2>&1
 if %errorlevel% neq 0 (
     echo [警告] pip 未找到，尝试修复...
-    python -m ensurepip --default-pip
+    "%PYTHON_PATH%" -m ensurepip --default-pip
 )
-pip --version
+"%PYTHON_PATH%" -m pip --version
 echo [✓] pip 已安装
 echo.
 
 :: 升级 pip
 echo [3/5] 升级 pip 到最新版本...
-python -m pip install --upgrade pip
+"%PYTHON_PATH%" -m pip install --upgrade pip
 echo [✓] pip 已升级
 echo.
 
@@ -56,13 +84,13 @@ echo 依赖列表:
 type requirements.txt
 echo.
 echo 正在安装...
-pip install -r requirements.txt
+"%PYTHON_PATH%" -m pip install -r requirements.txt
 if %errorlevel% neq 0 (
     echo.
     echo [错误] 依赖安装失败！
     echo.
     echo 请检查网络连接，或尝试使用国内镜像源:
-    echo pip install -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple
+    echo "%PYTHON_PATH%" -m pip install -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple
     echo.
     pause
     exit /b 1
@@ -85,7 +113,7 @@ echo  安装完成！
 echo ========================================
 echo.
 echo 已安装的依赖:
-pip list | findstr /C:"Flask" /C:"requests" /C:"openpyxl" /C:"gunicorn"
+"%PYTHON_PATH%" -m pip list | findstr /C:"Flask" /C:"requests" /C:"openpyxl" /C:"gunicorn"
 echo.
 echo === 下一步操作 ===
 echo.

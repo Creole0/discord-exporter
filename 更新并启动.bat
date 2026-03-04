@@ -31,26 +31,35 @@ if %errorlevel% neq 0 (
     echo.
 )
 
+:: 设置 Python 路径
+set PYTHON_PATH=python
+
 :: 检查 Python
 echo [3/6] 检查 Python 环境...
+
 python --version >nul 2>&1
-if %errorlevel% neq 0 (
-    echo [错误] 未检测到 Python！
-    echo.
-    echo 请先安装 Python 3.7+
-    echo 下载地址: https://www.python.org/downloads/
-    echo.
-    pause
-    exit /b 1
+if %errorlevel% equ 0 (
+    set PYTHON_PATH=python
+) else (
+    if exist "C:\Users\muhua\AppData\Local\Programs\Python\Python312\python.exe" (
+        set PYTHON_PATH=C:\Users\muhua\AppData\Local\Programs\Python\Python312\python.exe
+    ) else (
+        echo [错误] 未检测到 Python！
+        echo.
+        echo 请先运行 "首次安装.bat" 或 "安装Python.bat"
+        echo.
+        pause
+        exit /b 1
+    )
 )
 
-python --version
+"%PYTHON_PATH%" --version
 echo [✓] Python 环境正常
 echo.
 
 :: 更新依赖
 echo [4/6] 更新依赖包...
-pip install --upgrade -r requirements.txt
+"%PYTHON_PATH%" -m pip install --upgrade -r requirements.txt
 if %errorlevel% neq 0 (
     echo [警告] 依赖更新失败，尝试继续...
 ) else (
@@ -79,7 +88,7 @@ echo.
 timeout /t 2 /nobreak >nul
 start http://localhost:5000
 
-python app.py
+"%PYTHON_PATH%" app.py
 
 echo.
 echo ========================================

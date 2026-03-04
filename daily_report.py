@@ -168,46 +168,66 @@ def export_channels(urls, date_from, date_to):
 
 # ========== Gemini 摘要 ==========
 
-SUMMARY_PROMPT = """你是一个 Discord 社群运营分析师。请根据以下聊天记录生成一份详细的**周报**（纯文字，不要 HTML/Markdown 格式标记）。
+SUMMARY_PROMPT = """你是一个 Discord 社群运营分析师。请根据以下聊天记录生成一份详细的周报。
 
 格式要求：
-- 纯文本，不要使用任何 Markdown 格式（不要用 # * ** ``` 等符号）
 - 用中文书写
-- 用 ━━━ 分隔各大板块
+- 支持飞书卡片的轻量 Markdown：**加粗** 和 [链接](url) 可以用，但不要用 # 标题、``` 代码块、> 引用块、表格
+- 用 ━━━ 作为板块之间的分隔符（独占一行）
 - 引用用户原文时用「」括起来
 
 报告结构（必须包含以下所有板块）：
 
-1. 概览
-   统计周期、总消息数、活跃用户数、涉及频道数
+**📊 概览**
+统计周期、总消息数、活跃用户数、涉及频道数
 
-2. 本周总结
-   [好评] 用户对产品/社群的正面反馈，列出 2-5 条，每条附上用户名和原文引用
-   [中评] 用户提出的建议或改进意见，列出 2-5 条，每条附上用户名和原文引用
-   [差评] 用户的不满、抱怨或 bug 反馈，列出 2-5 条，每条附上用户名和原文引用
-   （如果某个类别没有相关内容，写"本周暂无"）
+━━━
 
-3. 讨论热点 TOP 3-5
-   每个热点包含：话题名称、简要总结(50字内)、相关关键词、提及次数
+**👍 好评**
+用户对产品/社群的正面反馈，列出 2-5 条，每条附上用户名和原文引用
 
-4. 重要消息与公告
-   列出 2-5 条重要消息，每条包含：发送者、时间、消息原文
+**😐 中评**
+用户提出的建议或改进意见，列出 2-5 条，每条附上用户名和原文引用
 
-5. 实用资源与链接
-   如果聊天中有人分享了链接、教程、工具等资源，列出来，包含：分享者、资源描述、原始链接URL
-   （如果没有分享链接，写"本周暂无资源分享"）
+**👎 差评**
+用户的不满、抱怨或 bug 反馈，列出 2-5 条，每条附上用户名和原文引用
+（如果某个类别没有相关内容，写"本周暂无"）
 
-6. 精彩对话与金句
-   挑选 2-3 段有趣/有价值的对话片段，直接引用用户原文
+━━━
 
-7. 问题与解答
-   如果有用户提问并得到回答，列出 2-3 组 Q&A，附上提问者和回答者
+**🔥 讨论热点 TOP 3-5**
+每个热点包含：话题名称、简要总结(50字内)、相关关键词
 
-8. 活跃用户 TOP 5
-   用户名、消息数、一句话概括其发言特点
+━━━
 
-9. 一句话总结
-   用一句话概括本周社群氛围
+**📢 重要消息与公告**
+列出 2-5 条重要消息，每条包含：发送者、时间、消息原文
+
+━━━
+
+**🔗 实用资源与链接**
+如果聊天中有人分享了链接、教程、工具等资源，列出来，包含：分享者、资源描述、原始链接URL
+（如果没有分享链接，写"本周暂无资源分享"）
+
+━━━
+
+**💬 精彩对话与金句**
+挑选 2-3 段有趣/有价值的对话片段，直接引用用户原文
+
+━━━
+
+**❓ 问题与解答**
+如果有用户提问并得到回答，列出 2-3 组 Q&A，附上提问者和回答者
+
+━━━
+
+**👤 活跃用户 TOP 5**
+用户名、消息数、一句话概括其发言特点
+
+━━━
+
+**💡 一句话总结**
+用一句话概括本周社群氛围
 
 聊天记录如下：
 """
@@ -246,13 +266,34 @@ def generate_summary(chat_text):
                 break
     return "摘要生成失败"
 
-# ========== 飞书发送 ==========
+# ========== 飞书卡片发送 ==========
 
-def send_lark(text):
-    payload = {
-        "msg_type": "text",
-        "content": {"text": text}
+def build_card(report, period):
+    sections = report.split("━━━")
+    elements = []
+    for section in sections:
+        text = section.strip()
+        if not text:
+            continue
+        elements.append({"tag": "markdown", "content": text})
+        elements.append({"tag": "hr"})
+    if elements and elements[-1].get("tag") == "hr":
+        elements.pop()
+
+    return {
+        "msg_type": "interactive",
+        "card": {
+            "header": {
+                "title": {"content": f"📋 Discord 社群周报 ({period})", "tag": "plain_text"},
+                "template": "purple",
+            },
+            "elements": elements,
+        },
     }
+
+
+def send_lark(report, period):
+    payload = build_card(report, period)
     r = req.post(LARK_WEBHOOK, json=payload)
     print(f"[飞书] 状态码={r.status_code}, 返回={r.text}")
     return r.status_code == 200
@@ -303,8 +344,7 @@ def main():
         print("[跳过] 摘要生成失败，不发送到飞书\n")
     else:
         print("[Step 3/3] 发送到飞书群...")
-        lark_text = f"Discord 社群周报 ({period})\n\n{summary}"
-        ok = send_lark(lark_text)
+        ok = send_lark(summary, period)
         if ok:
             print("  发送成功!\n")
         else:
