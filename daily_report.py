@@ -236,7 +236,7 @@ SUMMARY_PROMPT = """你是一个 Discord 社群运营分析师。请根据以下
 def generate_summary(chat_text):
     client = OpenAI(base_url=AI_API_BASE, api_key=AI_API_KEY)
 
-    model_name = "gemini-3-flash"
+    model_name = "gemini-2.5-flash"
     for attempt in range(3):
         try:
             print(f"  尝试模型: {model_name} (第{attempt+1}次)")
