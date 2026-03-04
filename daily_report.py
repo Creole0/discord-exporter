@@ -17,10 +17,10 @@ if sys.stdout.encoding != "utf-8":
 
 # ========== 配置 ==========
 
-DISCORD_BOT_TOKEN = os.environ.get("DISCORD_BOT_TOKEN", "")
-AI_API_BASE = os.environ.get("AI_API_BASE", "")
-AI_API_KEY = os.environ.get("AI_API_KEY", "")
-LARK_WEBHOOK = os.environ.get("LARK_WEBHOOK", "")
+DISCORD_BOT_TOKEN = os.environ.get("DISCORD_BOT_TOKEN", "").strip()
+AI_API_BASE = os.environ.get("AI_API_BASE", "").strip()
+AI_API_KEY = os.environ.get("AI_API_KEY", "").strip()
+LARK_WEBHOOK = os.environ.get("LARK_WEBHOOK", "").strip()
 
 CHANNEL_URLS = [
     "https://discord.com/channels/1372503951869607976/1373976286736945243",
