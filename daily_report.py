@@ -166,6 +166,14 @@ def export_channels(urls, date_from, date_to):
 
     return "\n".join(all_text), total_msgs
 
+
+def normalize_ai_base(base_url):
+    """确保中转地址可用于 OpenAI SDK（缺 /v1 时自动补上）"""
+    base = (base_url or "").strip().rstrip("/")
+    if base and not base.endswith("/v1"):
+        base = f"{base}/v1"
+    return base
+
 # ========== Gemini 摘要 ==========
 
 SUMMARY_PROMPT = """你是一个 Discord 社群运营分析师。请根据以下聊天记录生成一份详细的周报。
@@ -234,36 +242,47 @@ SUMMARY_PROMPT = """你是一个 Discord 社群运营分析师。请根据以下
 
 
 def generate_summary(chat_text):
-    client = OpenAI(base_url=AI_API_BASE, api_key=AI_API_KEY)
+    base_url = normalize_ai_base(AI_API_BASE)
+    client = OpenAI(base_url=base_url, api_key=AI_API_KEY)
+    print(f"  使用 API Base: {base_url}")
 
-    model_name = "gemini-2.5-flash"
-    for attempt in range(3):
-        try:
-            print(f"  尝试模型: {model_name} (第{attempt+1}次)")
-            response = client.chat.completions.create(
-                model=model_name,
-                messages=[
-                    {"role": "system", "content": SUMMARY_PROMPT.strip()},
-                    {"role": "user", "content": chat_text},
-                ],
-            )
-            text = response.choices[0].message.content or ""
-            if text.strip():
-                print(f"  成功使用模型: {model_name}")
-                return text.strip()
-        except Exception as e:
-            err_str = str(e)
-            if "429" in err_str or "RESOURCE_EXHAUSTED" in err_str:
-                wait = 15 * (attempt + 1)
-                print(f"  额度限制，等待 {wait}s 后重试...")
-                time.sleep(wait)
-            elif "503" in err_str or "UNAVAILABLE" in err_str:
-                wait = 10 * (attempt + 1)
-                print(f"  服务暂不可用，等待 {wait}s 后重试...")
-                time.sleep(wait)
-            else:
-                print(f"  出错: {err_str[:200]}")
-                break
+    model_candidates = [
+        "gemini-3-flash",       # 你之前跑通过，优先尝试
+        "gemini-2.5-flash",     # 兼容兜底
+        "gemini-2.5-flash-lite"
+    ]
+
+    for model_name in model_candidates:
+        for attempt in range(3):
+            try:
+                print(f"  尝试模型: {model_name} (第{attempt+1}次)")
+                response = client.chat.completions.create(
+                    model=model_name,
+                    messages=[
+                        {"role": "system", "content": SUMMARY_PROMPT.strip()},
+                        {"role": "user", "content": chat_text},
+                    ],
+                )
+                text = response.choices[0].message.content or ""
+                if text.strip():
+                    print(f"  成功使用模型: {model_name}")
+                    return text.strip()
+            except Exception as e:
+                err_str = str(e)
+                if "404" in err_str or "Not Found" in err_str or "model_not_found" in err_str:
+                    print(f"  模型不可用，切换下一个模型: {model_name}")
+                    break
+                if "429" in err_str or "RESOURCE_EXHAUSTED" in err_str:
+                    wait = 15 * (attempt + 1)
+                    print(f"  额度限制，等待 {wait}s 后重试...")
+                    time.sleep(wait)
+                elif "503" in err_str or "UNAVAILABLE" in err_str:
+                    wait = 10 * (attempt + 1)
+                    print(f"  服务暂不可用，等待 {wait}s 后重试...")
+                    time.sleep(wait)
+                else:
+                    print(f"  出错: {err_str[:200]}")
+                    break
     return "摘要生成失败"
 
 # ========== 飞书卡片发送 ==========
