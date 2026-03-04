@@ -3,3 +3,4 @@ requests
 openpyxl
 gunicorn
 google-genai
+openai
