@@ -26,3 +26,12 @@ jobs:
           AI_API_KEY: ${{ secrets.AI_API_KEY }}
           AI_API_BASE: ${{ secrets.AI_API_BASE }}
           LARK_WEBHOOK: ${{ secrets.LARK_WEBHOOK }}
+
+      - name: Upload source artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: discord-weekly-source-${{ github.run_id }}
+          path: exports/
+          if-no-files-found: ignore
+          retention-days: 30

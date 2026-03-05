@@ -21,6 +21,9 @@ DISCORD_BOT_TOKEN = os.environ.get("DISCORD_BOT_TOKEN", "").strip()
 AI_API_BASE = os.environ.get("AI_API_BASE", "").strip()
 AI_API_KEY = os.environ.get("AI_API_KEY", "").strip()
 LARK_WEBHOOK = os.environ.get("LARK_WEBHOOK", "").strip()
+GITHUB_SERVER_URL = os.environ.get("GITHUB_SERVER_URL", "").strip()
+GITHUB_REPOSITORY = os.environ.get("GITHUB_REPOSITORY", "").strip()
+GITHUB_RUN_ID = os.environ.get("GITHUB_RUN_ID", "").strip()
 
 CHANNEL_URLS = [
     "https://discord.com/channels/1372503951869607976/1373976286736945243",
@@ -287,7 +290,13 @@ def generate_summary(chat_text):
 
 # ========== 飞书卡片发送 ==========
 
-def build_card(report, period):
+def build_run_url():
+    if GITHUB_SERVER_URL and GITHUB_REPOSITORY and GITHUB_RUN_ID:
+        return f"{GITHUB_SERVER_URL}/{GITHUB_REPOSITORY}/actions/runs/{GITHUB_RUN_ID}"
+    return ""
+
+
+def build_card(report, period, source_url=""):
     sections = report.split("━━━")
     elements = []
     for section in sections:
@@ -295,6 +304,13 @@ def build_card(report, period):
         if not text:
             continue
         elements.append({"tag": "markdown", "content": text})
+        elements.append({"tag": "hr"})
+    if source_url:
+        elements.append({
+            "tag": "markdown",
+            "content": f"📎 **源文件下载入口**：[查看本次运行与 Artifacts]({source_url})"
+        })
+        elements.append({"tag": "note", "elements": [{"tag": "plain_text", "content": "说明：源文件在该页面 Artifacts 区域下载。"}]})
         elements.append({"tag": "hr"})
     if elements and elements[-1].get("tag") == "hr":
         elements.pop()
@@ -311,8 +327,8 @@ def build_card(report, period):
     }
 
 
-def send_lark(report, period):
-    payload = build_card(report, period)
+def send_lark(report, period, source_url=""):
+    payload = build_card(report, period, source_url)
     r = req.post(LARK_WEBHOOK, json=payload)
     print(f"[飞书] 状态码={r.status_code}, 返回={r.text}")
     return r.status_code == 200
@@ -363,7 +379,8 @@ def main():
         print("[跳过] 摘要生成失败，不发送到飞书\n")
     else:
         print("[Step 3/3] 发送到飞书群...")
-        ok = send_lark(summary, period)
+        source_url = build_run_url()
+        ok = send_lark(summary, period, source_url)
         if ok:
             print("  发送成功!\n")
         else:
