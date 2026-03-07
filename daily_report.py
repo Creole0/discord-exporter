@@ -8,6 +8,7 @@ import time
 import os
 import re
 import sys
+from collections import Counter
 from datetime import datetime, timedelta
 from openai import OpenAI
 
@@ -32,10 +33,12 @@ CHANNEL_URLS = [
     "https://discord.com/channels/1372503951869607976/1463475928045715497",
     "https://discord.com/channels/1372503951869607976/1463475985499291698",
     "https://discord.com/channels/1372503951869607976/1374268433373335613",
+    "https://discord.com/channels/1372503951869607976/1477959294174494873",
 ]
 
 DAYS_BACK = 7
 API_BASE = "https://discord.com/api/v9"
+MAX_SUMMARY_CHARS = 120000
 
 # ========== Discord 抓取 ==========
 
@@ -116,7 +119,10 @@ def get_messages(channel_id, date_from, date_to):
 
 def export_channels(urls, date_from, date_to):
     all_text = []
+    ai_text = []
     total_msgs = 0
+    author_counts = Counter()
+    covered_items = set()
 
     for url in urls:
         guild_id, channel_id = parse_url(url)
@@ -145,29 +151,45 @@ def export_channels(urls, date_from, date_to):
                 msgs = get_messages(thread["id"], date_from, date_to)
                 if msgs:
                     msgs.sort(key=lambda m: m["id"])
+                    covered_items.add(f"thread:{thread['id']}")
                     all_text.append(f"{'='*50}\n帖子: {thread['name']}\n{'='*50}")
+                    ai_text.append(f"{'='*50}\n帖子: {thread['name']}\n{'='*50}")
                     for msg in msgs:
                         author = msg.get("author", {}).get("username", "未知")
                         t = snowflake_to_datetime(msg["id"]).strftime("%Y-%m-%d %H:%M:%S")
                         content = msg.get("content", "")
                         all_text.append(f"[{t}] {author}: {content}")
+                        ai_text.append(f"{author}: {content}")
                         total_msgs += 1
+                        author_counts[author] += 1
                     all_text.append("")
+                    ai_text.append("")
                 time.sleep(0.3)
         else:
             msgs = get_messages(channel_id, date_from, date_to)
             if msgs:
                 msgs.sort(key=lambda m: m["id"])
+                covered_items.add(f"channel:{channel_id}")
                 all_text.append(f"{'='*50}\n频道: #{ch_name}\n{'='*50}")
+                ai_text.append(f"{'='*50}\n频道: #{ch_name}\n{'='*50}")
                 for msg in msgs:
                     author = msg.get("author", {}).get("username", "未知")
                     t = snowflake_to_datetime(msg["id"]).strftime("%Y-%m-%d %H:%M:%S")
                     content = msg.get("content", "")
                     all_text.append(f"[{t}] {author}: {content}")
+                    ai_text.append(f"{author}: {content}")
                     total_msgs += 1
+                    author_counts[author] += 1
                 all_text.append("")
+                ai_text.append("")
 
-    return "\n".join(all_text), total_msgs
+    stats = {
+        "total_messages": total_msgs,
+        "active_users": len(author_counts),
+        "covered_items": len(covered_items),
+        "top_users": author_counts.most_common(10),
+    }
+    return "\n".join(all_text), "\n".join(ai_text), stats
 
 
 def normalize_ai_base(base_url):
@@ -187,11 +209,9 @@ SUMMARY_PROMPT = """你是一个 Discord 社群运营分析师。请根据以下
 - 用 ━━━ 作为板块之间的分隔符（独占一行）
 - 引用用户原文时用「」括起来
 - 如果引用内容是日语或英文，请在原文后追加一行中文翻译，格式：中文翻译：...
+- 不要生成“📊 概览”板块，这一部分会由程序使用真实统计自动追加
 
 报告结构（必须包含以下所有板块）：
-
-**📊 概览**
-统计周期、总消息数、活跃用户数、涉及频道数
 
 ━━━
 
@@ -245,10 +265,83 @@ SUMMARY_PROMPT = """你是一个 Discord 社群运营分析师。请根据以下
 """
 
 
-def generate_summary(chat_text):
+def format_top_users(top_users):
+    if not top_users:
+        return "无"
+    return "、".join(f"{name}({count})" for name, count in top_users)
+
+
+def trim_chat_text(chat_text):
+    if len(chat_text) <= MAX_SUMMARY_CHARS:
+        return chat_text, False
+
+    sections = [s for s in chat_text.split("\n\n") if s.strip()]
+    target = MAX_SUMMARY_CHARS // 2
+
+    front = []
+    front_len = 0
+    for section in sections:
+        size = len(section) + 2
+        if front_len + size > target:
+            break
+        front.append(section)
+        front_len += size
+
+    back = []
+    back_len = 0
+    remaining = sections[len(front):]
+    for section in reversed(remaining):
+        size = len(section) + 2
+        if back_len + size > target:
+            break
+        back.append(section)
+        back_len += size
+
+    trimmed = "\n\n".join(
+        front
+        + ["[...中间部分因消息过多已省略，完整聊天记录请以导出文件为准...]"]
+        + list(reversed(back))
+    )
+    return trimmed, True
+
+
+def build_overview(stats, period):
+    return "\n".join(
+        [
+            "**📊 概览**",
+            f"统计周期：{period}",
+            f"总消息数：{stats['total_messages']} 条",
+            f"活跃用户数：{stats['active_users']} 人",
+            f"涉及频道/帖子数：{stats['covered_items']} 个",
+        ]
+    )
+
+
+def build_summary_input(chat_text, stats, period):
+    trimmed_text, was_trimmed = trim_chat_text(chat_text)
+    meta = "\n".join(
+        [
+            "以下是程序预先计算的真实统计，请你在分析时参考：",
+            f"- 统计周期：{period}",
+            f"- 总消息数：{stats['total_messages']}",
+            f"- 活跃用户数：{stats['active_users']}",
+            f"- 涉及频道/帖子数：{stats['covered_items']}",
+            f"- 活跃用户TOP10（真实计数）：{format_top_users(stats['top_users'])}",
+            f"- 聊天记录是否被截断：{'是' if was_trimmed else '否'}",
+            "",
+            "聊天记录如下：",
+            trimmed_text,
+        ]
+    )
+    return meta
+
+
+def generate_summary(ai_chat_text, stats, period):
     base_url = normalize_ai_base(AI_API_BASE)
     client = OpenAI(base_url=base_url, api_key=AI_API_KEY)
     print(f"  使用 API Base: {base_url}")
+    summary_input = build_summary_input(ai_chat_text, stats, period)
+    print(f"  发送给模型的文本长度: {len(summary_input)} 字符")
 
     model_candidates = [
         "gemini-3-flash",       # 你之前跑通过，优先尝试
@@ -264,7 +357,7 @@ def generate_summary(chat_text):
                     model=model_name,
                     messages=[
                         {"role": "system", "content": SUMMARY_PROMPT.strip()},
-                        {"role": "user", "content": chat_text},
+                        {"role": "user", "content": summary_input},
                     ],
                 )
                 text = response.choices[0].message.content or ""
@@ -350,13 +443,15 @@ def main():
 
     # 1. 导出
     print("[Step 1/3] 导出聊天记录...")
-    chat_text, total = export_channels(CHANNEL_URLS, date_from, date_to)
+    chat_text, ai_chat_text, stats = export_channels(CHANNEL_URLS, date_from, date_to)
 
     if not chat_text.strip():
         print("[结束] 没有找到消息，跳过后续步骤")
         return
 
-    print(f"  导出完成: {total} 条消息\n")
+    print(f"  导出完成: {stats['total_messages']} 条消息")
+    print(f"  活跃用户: {stats['active_users']} 人")
+    print(f"  涉及频道/帖子: {stats['covered_items']} 个\n")
 
     # 保存到本地
     os.makedirs("exports", exist_ok=True)
@@ -367,7 +462,8 @@ def main():
 
     # 2. Gemini 摘要
     print("[Step 2/3] 生成 Gemini 摘要...")
-    summary = generate_summary(chat_text)
+    summary_body = generate_summary(ai_chat_text, stats, period)
+    summary = build_overview(stats, period) + "\n\n━━━\n\n" + summary_body
     print(f"  摘要长度: {len(summary)} 字\n")
     print("--- 摘要预览 ---")
     print(summary[:500])
