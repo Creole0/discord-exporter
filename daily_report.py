@@ -16,6 +16,20 @@ if sys.stdout.encoding != "utf-8":
     sys.stdout.reconfigure(encoding="utf-8")
     sys.stderr.reconfigure(encoding="utf-8")
 
+
+def _load_env(path=os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")):
+    """从脚本同目录的 .env 文件加载环境变量（不覆盖已有值）"""
+    if os.path.exists(path):
+        with open(path, encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if line and not line.startswith("#") and "=" in line:
+                    k, v = line.split("=", 1)
+                    os.environ.setdefault(k.strip(), v.strip())
+
+
+_load_env()
+
 # ========== 配置 ==========
 
 DISCORD_BOT_TOKEN = os.environ.get("DISCORD_BOT_TOKEN", "").strip()
@@ -449,11 +463,9 @@ def main():
     summary_body = generate_summary(ai_chat_text, stats, period)
     summary = build_overview(stats, period) + "\n\n━━━\n\n" + summary_body
     print(f"  摘要长度: {len(summary)} 字\n")
-    print("--- 摘要预览 ---")
-    print(summary[:500])
-    if len(summary) > 500:
-        print("...(截断)")
-    print("--- 预览结束 ---\n")
+    print("--- 完整摘要 ---")
+    print(summary)
+    print("--- 摘要结束 ---\n")
 
     # 3. 发送飞书
     if "摘要生成失败" in summary:
